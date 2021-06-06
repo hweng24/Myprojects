@@ -1,0 +1,781 @@
+---
+title: "722 Final Project"
+author: "Group 3"
+date: "8/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls(all=TRUE))
+library(dplyr)
+
+
+```
+
+# Calculation of the distance(dont run!!!)
+
+
+```{r eval=FALSE}
+
+airbnb <- read.csv("/Users/xc/Desktop/AAE722/airbnb_data.csv")
+topten <- read.csv("/Users/xc/Desktop/AAE722/topten.csv")
+
+# calculate the distance to the city
+
+library(geosphere) #distm 计算经纬度之间距离，单位是m 
+
+city_location <- topten %>% rename( tenlatitude = latitude , tenlongitude = longitude)
+city.data <- left_join(airbnb,city_location,by="city")
+
+
+
+
+for(i in 1:nrow(city.data)){
+  
+  
+  city.location =
+    c(city.data$tenlongitude[i],city.data$tenlatitude[i])
+  
+      location = c(city.data$longitude[i],city.data$latitude[i])
+      
+      xy=rbind(city.location=city.location,
+               location=location)
+      
+      a=distm(xy)
+      
+      city.data$distance[i]=a[2,1]
+
+      
+    }
+  
+
+```
+
+# data cleanning
+
+```{r}
+city.data <- read.csv("/Users/xc/Desktop/AAE722/city.data.csv")
+city.data.1 <- city.data %>% group_by(X) %>% filter(distance==min(distance)) %>% mutate(city=as.factor(city))
+city.data.1 <- city.data.1 %>% ungroup(X) %>% mutate(distance = distance/1000) ##change to km
+nrow(city.data.1)
+city.data.1 <- na.omit(city.data.1)
+nrow(city.data.1)
+city <- city.data.1
+
+
+city <- read.csv("C:/Users/xchen872/Desktop/city.csv")
+city <- city %>% mutate(city=as.factor(city))
+## 36000 observation remain
+city <- na.omit(city)
+## 27734 remain after delete NA
+
+## cancellation =0 if it is strict or super_strict_30 or super_strict_60
+             #=1  if it is flexible or moderate
+
+city <- city %>% mutate(cancellation = ifelse(cancellation_policy == "flexible" | 
+                                                              cancellation_policy == "moderate",1,
+                                                            0)) %>% select(-cancellation_policy)
+## generate the original price 
+
+city <- city %>% mutate(price = exp(log_price))
+
+city <- city %>%  select(-X.1,-property_type,-host_has_profile_pic,-host_identity_verified,-host_since,-last_review,-latitude,-longitude,-neighbourhood,-tenlatitude,-tenlongitude,-first_review,-host_response_rate) %>% mutate(room_type = ifelse(room_type == "Entire home/apt",1,0)) %>% mutate(bed_type = ifelse(bed_type =="Real Bed",1,0))
+
+
+```
+
+36000 to 27734 after dropping NA
+
+
+```{r}
+
+summary(city.data.1)
+
+```
+
+
+# spatial analysis
+
+### property density map
+
+```{r}
+
+map.nyc <- topten %>% rename( tenlatitude = latitude , tenlongitude = longitude) %>% filter(city == "NYC")
+
+
+library("leaflet")
+nyc <- city.data.1 %>% filter(city == "NYC")
+nyc <- nyc %>% mutate(dist_range = ifelse(distance<=1,1,0)) %>% mutate(price = exp(log_price))
+pal <- colorFactor(c("navy","red"), domain = c("1", "0"))
+nyc_m <- leaflet(map.nyc) %>% 
+  addTiles() %>% 
+  addMarkers(map.nyc$tenlongitude,map.nyc$tenlatitude , popup = as.character(map.nyc$name), clusterOptions = 5) %>% 
+  addCircles(lng = nyc$longitude, lat = nyc$latitude)
+
+nyc_m
+
+
+```
+
+
+```{r}
+
+topten <- read.csv("/Users/xc/Desktop/AAE722/topten.csv")
+map.LA <- topten %>% rename( tenlatitude = latitude , tenlongitude = longitude) %>% filter(city == "LA")
+
+
+library("leaflet")
+LA <- city.data.1 %>% filter(city == "LA")
+LA <- LA %>% mutate(dist_range = ifelse(distance<=1,1,0)) %>% mutate(price = exp(log_price))
+pal <- colorFactor(c("navy","red"), domain = c("1", "0"))
+LA_m <- leaflet(map.LA) %>% 
+  addTiles() %>% 
+  addMarkers(map.LA$tenlongitude,map.LA$tenlatitude , popup = as.character(map.LA$name), clusterOptions = 5) %>% 
+  addCircles(lng = LA$longitude, lat = LA$latitude)
+
+LA_m
+
+
+```
+
+### price density map
+```{r}
+rm(list=ls(all=TRUE))
+
+library(ggmap)
+library(RColorBrewer)
+library(patchwork)
+library(here)
+
+set.seed(1234)
+theme_set(theme_minimal())
+
+```
+
+
+
+```{r}
+nyc_bb <- c(left = -74.075376,
+            bottom = 40.544114,
+            right = -73.632490,
+            top = 40.850741)
+
+
+nyc_stamen <- get_stamenmap(bbox = nyc_bb,
+                                zoom = 13)
+
+ggmap(nyc_stamen) +
+stat_density_2d(data = city,
+              aes(x = longitude,
+                  y = latitude,
+                  fill = stat(level)),
+              alpha = .2,
+              bins = 25,
+              geom = "polygon") +
+scale_fill_gradientn(colors = brewer.pal(7, "YlOrRd"))
+```
+
+
+
+```{r}
+la_bb <- c(left = -118.654034,
+            bottom = 33.827267,
+            right = -118.1,
+            top = 34.206314)
+
+
+la_stamen <- get_stamenmap(bbox = la_bb,
+                                zoom = 11)
+
+ggmap(la_stamen) +
+stat_density_2d(data = city,
+              aes(x = longitude,
+                  y = latitude,
+                  fill = stat(level)),
+              alpha = .2,
+              bins = 25,
+              geom = "polygon") +
+scale_fill_gradientn(colors = brewer.pal(7, "YlOrRd"))
+```
+
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(data.table)
+library(ggmap)
+library(sp)
+library(rgdal)
+library(ggplot2)
+library(RColorBrewer)
+```
+
+
+```{r}
+positions <- data.frame(city$city, city$log_price, city$latitude, city$longitude)
+positions <- positions %>% rename(city=city.city, log_price = city.log_price, latitude= city.latitude, longitude = city.longitude)
+```
+
+
+
+```{r}
+la_position <- subset(positions, city == "LA")
+
+la_t <- subset(topten, city == "LA")
+
+la_position$price_cuts <- cut(la_position$log_price, breaks=5)
+ggmap(la_stamen) + stat_density2d(data=la_position, mapping=aes(x=longitude, y=latitude, fill=price_cuts), alpha=0.3, geom="polygon") + geom_point(data=la_t, mapping=aes(x=longitude, y=latitude))
+```
+
+```{r}
+nyc_position <- subset(positions, city == "NYC")
+
+nyc_t <- subset(topten, city == "NYC")
+
+nyc_position$price_cuts <- cut(nyc_position$log_price, breaks=5)
+
+nyc_center <- c(lon = -73.986450, lat = 40.749228)
+
+nyc_google <- get_googlemap(center = nyc_center, zoom=12)
+ggmap(nyc_google) + stat_density2d(data=nyc_position, mapping=aes(x=longitude, y=latitude, fill=price_cuts), alpha=0.3, geom="polygon") + geom_point(data=nyc_t, mapping=aes(x=longitude, y=latitude))
+```
+
+# regression
+
+```{r}
+
+
+
+
+library(Matrix)
+library(lfe)
+ols.fit.fe <- lm(data = city, log_price ~ accommodates + bathrooms + bedrooms + beds +  number_of_reviews + distance + review_scores_rating + cancellation+name+zipcode)
+
+ols.fit <- lm(data = city, log_price ~ accommodates + bathrooms + bedrooms + beds +  number_of_reviews + distance + review_scores_rating + cancellation)
+
+
+city.nyc <- city %>% filter(city == "NYC")
+city.la <- city %>% filter(city == "LA")
+
+
+ols.fit.nyc.fe <- lm(data = city.nyc, log_price ~ accommodates + bathrooms + bedrooms + beds +  number_of_reviews + distance + review_scores_rating + cancellation+name+zipcode)
+ols.fit.nyc <- lm(data = city.nyc, log_price ~ accommodates + bathrooms + bedrooms + beds +  number_of_reviews + distance + review_scores_rating + cancellation)
+
+
+ols.fit.la.fe <- lm(data = city.la, log_price ~ accommodates + bathrooms + bedrooms + beds +  number_of_reviews + distance + review_scores_rating + cancellation+name+zipcode)
+ols.fit.la <- lm(data = city.la, log_price ~ accommodates + bathrooms + bedrooms + beds +  number_of_reviews + distance + review_scores_rating + cancellation)
+
+
+
+```
+
+
+# ML-shrinkage
+
+### NYC
+```{r}
+
+
+
+# Ridge
+
+x=model.matrix(log_price ~ accommodates + bathrooms + bedrooms + beds + number_of_reviews + distance + review_scores_rating + cancellation + room_type + zipcode + name, city.nyc) 
+
+
+y= city.nyc$log_price
+
+# to use the function glmnet(), we need to code x as a matrix and y as a vector 
+# Ridge Regression
+
+library(glmnet)
+grid=10^seq(10,-2,length=100)
+ridge.mod=glmnet(x,y,alpha=0,lambda=grid) # 100 lambda values
+# alpha = 0: ridge
+# alpha = 1: lasso
+
+
+
+
+predict(ridge.mod,s=50,type="coefficients") # type defines the results
+set.seed(1)
+train=sample(1:nrow(x), nrow(x)/2)
+test=(-train)
+y.test=y[test]
+ridge.mod=glmnet(x[train,],y[train],alpha=0,lambda=grid, thresh=1e-12) 
+# thresh -- Convergence threshold 
+
+ridge.pred=predict(ridge.mod,s=4,newx=x[test,])
+mean((ridge.pred-y.test)^2) #0.4581132
+mean((mean(y[train])-y.test)^2) # only include intercept
+ridge.pred=predict(ridge.mod,s=1e10,newx=x[test,]) # predicted y
+mean((ridge.pred-y.test)^2) # 0.4581132
+
+
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train], alpha=0) # use cross validation to choose the tuning parameter lambda, default folds = 10
+plot(cv.out)
+bestlam=cv.out$lambda.min
+bestlam
+
+
+ridge.pred=predict(ridge.mod,s=bestlam,newx=x[test,])
+mean((ridge.pred-y.test)^2) #0.1422397
+
+out=glmnet(x,y,alpha=0) # without defining lambda value
+predict(out,type="coefficients",s=bestlam) # lambda value equals the best lambda obtained from CV
+
+# The Lasso
+
+lasso.mod=glmnet(x[train,],y[train],alpha=1,lambda=grid)
+plot(lasso.mod) 
+# L1 norm is the regularization term for LASSO
+# smaller L1 norm -- lots of regularization
+# larger L1 norm -- allow more varaibles enter the model
+
+lasso.pred=predict(lasso.mod,s=4,newx=x[test,])
+mean((lasso.pred-y.test)^2)
+
+
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train],alpha=1)
+plot(cv.out)
+bestlam=cv.out$lambda.min
+lasso.pred=predict(lasso.mod,s=bestlam,newx=x[test,])
+mean((lasso.pred-y.test)^2)
+out=glmnet(x,y,alpha=1,lambda=grid)
+lasso.coef=predict(out,type="coefficients",s=bestlam)[1:30,]
+lasso.coef
+lasso.coef[lasso.coef!=0]
+
+
+```
+
+### LA
+
+
+```{r}
+
+# Ridge
+
+x=model.matrix(log_price ~ accommodates + bathrooms + bedrooms + beds + number_of_reviews + distance + review_scores_rating + cancellation + room_type + zipcode + name, city.la) 
+
+
+y= city.la$log_price
+
+# to use the function glmnet(), we need to code x as a matrix and y as a vector 
+# Ridge Regression
+
+library(glmnet)
+grid=10^seq(10,-2,length=100)
+ridge.mod=glmnet(x,y,alpha=0,lambda=grid) # 100 lambda values
+# alpha = 0: ridge
+# alpha = 1: lasso
+
+
+predict(ridge.mod,s=50,type="coefficients") # type defines the results
+set.seed(1)
+train=sample(1:nrow(x), nrow(x)/2)
+test=(-train)
+y.test=y[test]
+ridge.mod=glmnet(x[train,],y[train],alpha=0,lambda=grid, thresh=1e-12) 
+# thresh -- Convergence threshold 
+
+ridge.pred=predict(ridge.mod,s=1e10,newx=x[test,]) # predicted y
+mean((ridge.pred-y.test)^2)
+
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train], alpha=0) # use cross validation to choose the tuning parameter lambda, default folds = 10
+plot(cv.out)
+bestlam=cv.out$lambda.min
+bestlam
+
+
+ridge.pred=predict(ridge.mod,s=bestlam,newx=x[test,])
+mean((ridge.pred-y.test)^2) 
+
+out=glmnet(x,y,alpha=0) # without defining lambda value
+predict(out,type="coefficients",s=bestlam) # lambda value equals the best lambda obtained from CV
+
+# The Lasso
+
+lasso.mod=glmnet(x[train,],y[train],alpha=1,lambda=grid)
+plot(lasso.mod) 
+# L1 norm is the regularization term for LASSO
+# smaller L1 norm -- lots of regularization
+# larger L1 norm -- allow more varaibles enter the model
+
+lasso.pred=predict(lasso.mod,s=4,newx=x[test,])
+mean((lasso.pred-y.test)^2)
+
+
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train],alpha=1)
+plot(cv.out)
+bestlam=cv.out$lambda.min #0.00120933435
+lasso.pred=predict(lasso.mod,s=bestlam,newx=x[test,])
+mean((lasso.pred-y.test)^2) #0.1545517
+out=glmnet(x,y,alpha=1,lambda=grid)
+lasso.coef=predict(out,type="coefficients",s=bestlam)[1:30,]
+lasso.coef
+lasso.coef[lasso.coef!=0]
+
+
+
+```
+
+### Total
+
+
+```{r}
+
+# Ridge
+
+x=model.matrix(log_price ~ accommodates + bathrooms + bedrooms + beds + number_of_reviews + distance + review_scores_rating + cancellation + room_type + zipcode + name, city) 
+
+
+y= city$log_price
+
+# to use the function glmnet(), we need to code x as a matrix and y as a vector 
+# Ridge Regression
+
+library(glmnet)
+grid=10^seq(10,-2,length=100)
+ridge.mod=glmnet(x,y,alpha=0,lambda=grid) # 100 lambda values
+# alpha = 0: ridge
+# alpha = 1: lasso
+
+predict(ridge.mod,s=50,type="coefficients") # type defines the results
+set.seed(1)
+train=sample(1:nrow(x), nrow(x)/2)
+test=(-train)
+y.test=y[test]
+ridge.mod=glmnet(x[train,],y[train],alpha=0,lambda=grid, thresh=1e-12) 
+# thresh -- Convergence threshold 
+
+
+ridge.pred=predict(ridge.mod,s=1e10,newx=x[test,]) # predicted y
+mean((ridge.pred-y.test)^2) 
+
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train], alpha=0) # use cross validation to choose the tuning parameter lambda, default folds = 10
+plot(cv.out)
+bestlam=cv.out$lambda.min
+bestlam
+
+
+ridge.pred=predict(ridge.mod,s=bestlam,newx=x[test,])
+mean((ridge.pred-y.test)^2)
+
+out=glmnet(x,y,alpha=0) # without defining lambda value
+predict(out,type="coefficients",s=bestlam) # lambda value equals the best lambda obtained from CV
+
+# The Lasso
+
+lasso.mod=glmnet(x[train,],y[train],alpha=1,lambda=grid)
+plot(lasso.mod) 
+# L1 norm is the regularization term for LASSO
+# smaller L1 norm -- lots of regularization
+# larger L1 norm -- allow more varaibles enter the model
+lasso.pred.nocv = predict(lasso.mod,s=grid,newx = x[test,])
+mean((lasso.pred.nocv-y.test)^2)
+set.seed(1)
+cv.out=cv.glmnet(x[train,],y[train],alpha=1)
+plot(cv.out)
+bestlam=cv.out$lambda.min
+lasso.pred=predict(lasso.mod,s=bestlam,newx=x[test,])
+mean((lasso.pred-y.test)^2) 
+out=glmnet(x,y,alpha=1,lambda=grid)
+lasso.coef=predict(out,type="coefficients",s=bestlam)[1:30,]
+lasso.coef
+lasso.coef[lasso.coef!=0]
+
+
+
+```
+
+
+# ML-tree
+
+### nyc
+
+```{r}
+
+### remove zipcode and name for the full data
+library(tree)
+library(randomForest)
+set.seed(1)
+train = sample(1:nrow(city.nyc), 0.5*nrow(city.nyc))
+
+## REGRESSION TREE
+
+tree.city.nyc = tree(log_price ~ accommodates + bathrooms + bedrooms + beds + number_of_reviews + distance + review_scores_rating + cancellation + room_type, data = city.nyc , subset=train)
+summary(tree.city.nyc)
+
+plot(tree.city.nyc)
+text(tree.city.nyc, pretty=0)
+
+cv.city.nyc=cv.tree(tree.city.nyc)
+plot(cv.city.nyc$size,cv.city.nyc$dev,type = "b")
+
+prune.city.nyc = prune.tree(tree.city.nyc,best=7)
+plot(prune.city.nyc)
+text(prune.city.nyc,pretty=0)
+
+yhat = predict(tree.city.nyc, newdata=city.nyc[-train,])
+city.nyc.test = city.nyc[-train,"log_price"]
+
+plot(yhat,city.nyc.test)
+abline(0,1)
+mean((yhat-city.nyc.test)^2) # 0.1872353
+
+
+### Bagging and Random Forests
+
+
+set.seed(1)
+
+bag.city.nyc = randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds  + distance + review_scores_rating + cancellation + room_type , data = city.nyc , subset=train, mtry = 8, importance = TRUE)
+bag.city.nyc
+
+
+yhat.bag.city.nyc = predict(bag.city.nyc, newdata = city.nyc[-train,])
+
+plot(yhat.bag.city.nyc, city.nyc.test)
+abline(0,1)
+mean((yhat.bag.city.nyc-city.nyc.test)^2) # MSE 0.1586001 improved from the previous
+
+exp(sqrt(0.1586001)) # 1.489211 dollar, which is really low predict error
+
+
+##baggin and ramdom forest 
+
+
+bag.city.nyc = randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds  + distance + review_scores_rating + cancellation + room_type , data = city.nyc , subset=train,mtry = 8, importance = TRUE)
+
+bag.city.nyc
+
+yhat.bag = predict(bag.city.nyc, newdata = city.nyc[-train,])
+plot(yhat.bag, city.nyc.test)
+abline(0,1)
+mean((yhat.bag-city.nyc.test)^2) # 0.1456515 improved!
+
+
+### growing random forest
+
+
+set.seed(1)
+
+
+rf.city.nyc =randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds + number_of_reviews + distance + number_of_reviews +      review_scores_rating + cancellation + room_type , data = city.nyc , subset=train, mtry = 3, importance= TRUE)
+
+yhat.rf = predict(rf.city.nyc, newdata=city.nyc[-train,])
+mean((yhat.rf-city.nyc.test)^2) #0.138755
+
+importance(rf.city.nyc)
+
+varImpPlot(rf.city.nyc) # room type and distance are two most important variable
+
+
+
+### Boosting this part require mutiple tuning, costly might not be worthy
+
+
+
+```
+
+
+### LA
+
+```{r}
+
+### remove zipcode and name for the full data
+library(tree)
+library(randomForest)
+set.seed(1)
+train = sample(1:nrow(city.la), 0.5*nrow(city.la))
+
+## REGRESSION TREE
+
+tree.city.la = tree(log_price ~ accommodates + bathrooms + bedrooms + beds + number_of_reviews + distance + review_scores_rating + cancellation + room_type, data = city.la , subset=train)
+summary(tree.city.la)
+
+plot(tree.city.la)
+text(tree.city.la, pretty=0)
+
+cv.city.la=cv.tree(tree.city.la)
+plot(cv.city.la$size,cv.city.la$dev,type = "b")
+
+prune.city.la = prune.tree(tree.city.la,best=7)
+plot(prune.city.la)
+text(prune.city.la,pretty=0)
+
+yhat = predict(tree.city.la, newdata=city.la[-train,])
+city.la.test = city.la[-train,"log_price"]
+
+plot(yhat,city.la.test)
+abline(0,1)
+mean((yhat-city.la.test)^2) # 0.1872353
+
+
+### Bagging and Random Forests
+
+
+set.seed(1)
+
+bag.city.la = randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds  + distance + review_scores_rating + cancellation + room_type , data = city.la , subset=train, mtry = 8, importance = TRUE)
+bag.city.la
+
+
+yhat.bag.city.la = predict(bag.city.la, newdata = city.la[-train,])
+
+plot(yhat.bag.city.la, city.la.test)
+abline(0,1)
+mean((yhat.bag.city.la-city.la.test)^2) # MSE 0.1586001 improved from the previous
+
+exp(sqrt(0.1586001)) # 1.489211 dollar, which is really low predict error
+
+
+##baggin and ramdom forest 
+
+
+bag.city.la = randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds  + distance + review_scores_rating + cancellation + room_type , data = city.la , subset=train,mtry = 8, importance = TRUE)
+
+bag.city.la
+
+yhat.bag = predict(bag.city.la, newdata = city.la[-train,])
+plot(yhat.bag, city.la.test)
+abline(0,1)
+mean((yhat.bag-city.la.test)^2) # 0.1456515 improved!
+
+
+### growing random forest
+
+
+set.seed(1)
+
+
+rf.city.la =randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds + number_of_reviews + distance + number_of_reviews +      review_scores_rating + cancellation + room_type , data = city.la , subset=train, mtry = 3, importance= TRUE)
+
+yhat.rf = predict(rf.city.la, newdata=city.la[-train,])
+mean((yhat.rf-city.la.test)^2) #0.138755
+
+importance(rf.city.la)
+
+varImpPlot(rf.city.la) # room type and distance are two most important variable
+
+
+
+
+
+
+
+```
+
+### total
+
+```{r}
+
+### remove zipcode and name for the full data
+library(tree)
+library(randomForest)
+set.seed(1)
+train = sample(1:nrow(city), 0.5*nrow(city))
+
+## REGRESSION TREE
+
+tree.city = tree(log_price ~ accommodates + bathrooms + bedrooms + beds + number_of_reviews + distance + review_scores_rating + cancellation + room_type, data = city , subset=train)
+summary(tree.city)
+
+plot(tree.city)
+text(tree.city, pretty=0)
+
+cv.city=cv.tree(tree.city)
+plot(cv.city$size,cv.city$dev,type = "b")
+
+prune.city = prune.tree(tree.city,best=7)
+plot(prune.city)
+text(prune.city,pretty=0)
+
+yhat = predict(tree.city, newdata=city[-train,])
+city.test = city[-train,"log_price"]
+
+plot(yhat,city.test)
+abline(0,1)
+mean((yhat-city.test)^2) 
+
+
+### Bagging and Random Forests
+
+
+set.seed(1)
+
+bag.city = randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds  + distance + review_scores_rating + cancellation + room_type + city, data = city , subset=train, mtry = 9, importance = TRUE)
+bag.city
+
+
+yhat.bag.city = predict(bag.city, newdata = city[-train,])
+
+plot(yhat.bag.city, city.test)
+abline(0,1)
+mean((yhat.bag.city-city.test)^2) # MSE 0.1586001 improved from the previous
+
+exp(sqrt(0.1586001)) # 1.489211 dollar, which is really low predict error
+
+
+##baggin and ramdom forest 
+
+
+bag.city = randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds  + distance + review_scores_rating + cancellation + room_type + city, data = city , subset=train,mtry = 9, importance = TRUE)
+
+bag.city
+
+yhat.bag = predict(bag.city, newdata = city[-train,])
+plot(yhat.bag, city.test)
+abline(0,1)
+mean((yhat.bag-city.test)^2) # 0.1456515 improved!
+
+
+### growing random forest
+
+
+set.seed(1)
+
+
+rf.city =randomForest(log_price ~ accommodates + bathrooms + bedrooms +      beds + number_of_reviews + distance + number_of_reviews +      review_scores_rating + cancellation + room_type + city, data = city , subset=train, mtry = 3, importance= TRUE)
+
+yhat.rf = predict(rf.city, newdata=city[-train,])
+mean((yhat.rf-city.test)^2) #0.138755
+
+importance(rf.city)
+
+varImpPlot(rf.city) # room type and distance are two most important variable
+
+
+
+### Boosting this part require mutiple tuning, costly might not be worthy
+
+
+
+```
+
+
+
+
+
+# MSE comparison
+
+
+```{r}
+
+
+METHODS<- c("LASSO","LASSO.CV","RIDGE","RIDGE.CV","Regression Tree","Random Forest","LASSO","LASSO.CV","RIDGE","RIDGE.CV","Regression Tree","Random Forest","LASSO","LASSO.CV","RIDGE","RIDGE.CV","Regression Tree","Random Forest")
+group <- c("TOTAL","TOTAL","TOTAL","TOTAL","TOTAL","TOTAL","NYC","NYC","NYC","NYC","NYC","NYC","LA","LA","LA","LA","LA","LA")
+MSE <- c(0.4196,0.1498,0.4516,0.1372,0.187,0.151,0.4104,0.123,0.4104,0.1175,0.156,0.118,0.5184,0.15,0.518,0.148,0.2,0.1635)
+df <- data.frame(METHODS, group, MSE)
+
+library(ggplot2)
+ggplot(data=df, aes(x=METHODS, y=MSE, fill=group)) +
+  geom_bar(stat="identity", position=position_dodge()) 
+
+```
